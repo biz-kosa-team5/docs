@@ -1,11 +1,34 @@
 # 법령 RAG 질문-답변 처리 흐름
 
-이 문서는 `app/chatbot/features/legal_contract/rag` 패키지에서 사용자의 법률 질문이 입력된 뒤, 법령 근거 검색과 답변 생성을 거쳐 JSON 응답으로 반환되기까지의 흐름을 설명한다.
-
-대상 흐름은 두 가지다.
+이 문서는 `app/chatbot/features/legal_contract/rag` 패키지에서 법률 질문이 입력된 뒤 법령 근거 검색, 답변 생성, JSON 응답 반환까지 이어지는 흐름을 설명한다. 대상 흐름은 두 가지다.
 
 - 법령 근거 검색 API: `POST /api/laws/query`
 - 챗봇 법률 답변 흐름: `run_legal_contract() -> LegalRagQueryService -> LegalAnswerService`
+
+## 테스트 질문
+
+아래 질문은 QA 결과 문서에서 추출한 테스트 질문이다. 답변 흐름 검증 시 검색, 랭킹, 답변 생성 결과를 같은 질문 세트로 비교한다.
+
+1. 30억 아파트 매매 시 알아야 할 법률이 있을까?
+2. 아파트 매매 시 세금 책정 관련 법을 알려줘.
+3. 매매 계약서에서 중요하게 볼 부분은 어디야?
+4. 집을 살 때 알아야 할 법이 있을까?
+5. 아파트 매매계약 후 신고해야 하는 게 있어?
+6. 세입자 있는 집을 사도 괜찮아?
+7. 명의 이전은 어떤 법과 관련 있어?
+8. 계약금을 냈는데 계약을 취소할 수 있어?
+9. 부모님이 돈을 보태주면 문제가 있어?
+10. 등기부에서 빚 잡힌 집인지 보려면 뭘 봐야 해?
+11. 아파트 매매계약은 법적으로 언제 성립해?
+12. 매도인이 계약금을 받았는데 계약을 해제하려면 어떻게 해야 해?
+13. 부동산 거래 신고는 누가 해야 해?
+14. 공인중개사가 거래계약서를 거짓으로 작성하면 안 된다는 법이 있어?
+15. 부동산 등기부에는 어떤 권리를 등기할 수 있어?
+16. 소유권 이전등기는 어떤 법과 관련 있어?
+17. 토지거래허가구역에서 집을 사려면 허가가 필요해?
+18. 부동산 거래 신고필증은 등기와 어떤 관련이 있어?
+19. 매매대금을 지급하기로 한 계약도 매매로 볼 수 있어?
+20. 아파트 구분소유자는 집합건물법과 관련이 있어?
 
 ## 전체 흐름
 
@@ -26,37 +49,6 @@ flowchart TD
   M --> N["citation 검증 및 출처 포맷팅"]
   N --> O["LegalAnswerResponse JSON 반환"]
 ```
-
-## 주요 코드 위치
-
-아래 표는 질문 입력부터 답변 생성까지의 주요 메서드 위치다. 경로 기준은 프로젝트 루트(`server`)다.
-
-| 단계 | 메서드 또는 클래스 | 위치 |
-|---|---|---|
-| 검색 API 엔드포인트 | `query_law_sources()` | `app/chatbot/features/legal_contract/rag/controller/query_controller.py` |
-| 검색 서비스 의존성 생성 | `get_legal_rag_query_service()` | `app/chatbot/features/legal_contract/rag/controller/dependencies.py` |
-| 검색 입력 DTO | `LegalRagQueryRequest` | `app/chatbot/features/legal_contract/rag/dto/query.py` |
-| 검색 응답 DTO | `LegalRagQueryResponse`, `LegalSourceResponse` | `app/chatbot/features/legal_contract/rag/dto/query.py` |
-| 챗봇 법률 흐름 진입 | `run_legal_contract()` | `app/chatbot/features/legal_contract/service.py` |
-| 질문 정규화 | `normalize_query()` | `app/chatbot/features/legal_contract/normalization.py` |
-| 검색 오케스트레이션 | `LegalRagQueryService.query()` | `app/chatbot/features/legal_contract/rag/service/query_service.py` |
-| 확장어 조회 | `LegalRagQueryDao.matching_term_mappings()` | `app/chatbot/features/legal_contract/rag/dao/query_dao.py` |
-| 임베딩 입력 텍스트 생성 | `build_query_embedding_text()` | `app/chatbot/features/legal_contract/rag/service/query_text.py` |
-| 질문 키워드 추출 | `extract_query_terms()`, `strip_query_suffix()`, `longest_terms()` | `app/chatbot/features/legal_contract/rag/service/query_text.py` |
-| pgvector 유사도 검색 | `LegalRagQueryDao.nearest_law_documents()` | `app/chatbot/features/legal_contract/rag/dao/query_dao.py` |
-| Python fallback 랭킹 | `python_rank_documents()` | `app/chatbot/features/legal_contract/rag/service/query_ranking.py` |
-| 키워드 후보 검색 | `LegalRagQueryDao.keyword_law_documents()` | `app/chatbot/features/legal_contract/rag/dao/query_dao.py` |
-| 하이브리드 랭킹 | `hybrid_rank_documents()` | `app/chatbot/features/legal_contract/rag/service/query_ranking.py` |
-| 키워드 점수 계산 | `document_keyword_score()`, `term_keyword_score()` | `app/chatbot/features/legal_contract/rag/service/query_ranking.py` |
-| 검색 source 변환 | `source_item()` | `app/chatbot/features/legal_contract/rag/service/query_response.py` |
-| 검색 성공/실패 응답 생성 | `success_result()`, `failure_result()` | `app/chatbot/features/legal_contract/rag/service/query_response.py` |
-| 답변 생성 오케스트레이션 | `LegalAnswerService.answer()` | `app/chatbot/features/legal_contract/rag/service/answer_service.py` |
-| 답변 프롬프트 생성 | `build_legal_answer_messages()` | `app/chatbot/features/legal_contract/rag/service/answer_prompt.py` |
-| LLM 호출 및 구조화 출력 파싱 | `OpenAILegalAnswerGenerator.generate()` | `app/chatbot/features/legal_contract/rag/service/answer_generator.py` |
-| citation 검증 | `validated_citations()` | `app/chatbot/features/legal_contract/rag/service/answer_response.py` |
-| 출처 포함 답변 포맷팅 | `answer_with_citations()` | `app/chatbot/features/legal_contract/rag/service/answer_response.py` |
-| 최종 답변 dict 변환 | `response_dict()` | `app/chatbot/features/legal_contract/rag/service/answer_response.py` |
-| 답변 DTO | `LegalAnswerDraft`, `LegalCitation`, `LegalAnswerResponse` | `app/chatbot/features/legal_contract/rag/dto/answer.py` |
 
 ## 1. 입력 DTO
 
@@ -92,34 +84,7 @@ class LegalRagQueryRequest(BaseModel):
 | `normalized_query` | 정규화된 질문 |
 | `expanded_terms` | 일상어 매핑으로 찾은 법률 확장어 목록 |
 
-## 2. 컨트롤러와 의존성 주입
-
-검색 API 엔드포인트는 `app/chatbot/features/legal_contract/rag/controller/query_controller.py`의 `query_law_sources()`다.
-
-```python
-@router.post("/api/laws/query", response_model=LegalRagQueryResponse)
-def query_law_sources(
-  request: LegalRagQueryRequest,
-  service: LegalRagQueryServiceDep,
-) -> dict[str, Any]:
-  return service.query(request.question, request.top_k)
-```
-
-컨트롤러는 직접 DAO나 서비스를 생성하지 않는다. `app/chatbot/features/legal_contract/rag/controller/dependencies.py`의 `get_legal_rag_query_service()`와 `LegalRagQueryServiceDep`가 FastAPI `Depends` 기반 provider 역할을 한다.
-
-```python
-def get_legal_rag_query_service(session: SessionDep) -> LegalRagQueryService:
-  return LegalRagQueryService(LegalRagQueryDao(session))
-
-LegalRagQueryServiceDep = Annotated[
-  LegalRagQueryService,
-  Depends(get_legal_rag_query_service),
-]
-```
-
-이 구조의 목적은 컨트롤러를 얇게 유지하고, 실제 처리 책임을 서비스로 넘기는 것이다.
-
-## 3. 질문 정규화
+## 2. 질문 정규화
 
 검색 서비스의 시작점은 `app/chatbot/features/legal_contract/rag/service/query_service.py`의 `LegalRagQueryService.query()`다.
 
@@ -144,7 +109,7 @@ normalized_question = normalize_query(question)
 -> "계약금을 냈는데 계약을 취소할 수 있어"
 ```
 
-## 4. 확장어 매핑 조회
+## 3. 확장어 매핑 조회
 
 정규화된 질문은 `app/chatbot/features/legal_contract/rag/dao/query_dao.py`의 `LegalRagQueryDao.matching_term_mappings()`로 전달된다.
 
@@ -166,7 +131,7 @@ expanded_terms = unique_terms([mapping.legal_term for mapping in mappings])
 법률 확장어: "해약금"
 ```
 
-## 5. 랭킹용 검색어 구성
+## 4. 랭킹용 검색어 구성
 
 검색 랭킹에는 두 종류의 용어가 쓰인다.
 
@@ -190,7 +155,7 @@ primary_terms = longest_terms(extract_query_terms(normalized_question) + daily_t
 
 불필요한 짧은 토큰이나 stop word는 제외한다.
 
-## 6. 질문 임베딩 생성
+## 5. 질문 임베딩 생성
 
 질문 임베딩에 들어가는 텍스트는 `app/chatbot/features/legal_contract/rag/service/query_text.py`의 `build_query_embedding_text()`가 만든다.
 
@@ -223,7 +188,7 @@ query_embedding = client.embed([embedding_text])[0]
 }
 ```
 
-## 7. 벡터 유사도 검색
+## 6. 벡터 유사도 검색
 
 벡터 검색은 `app/chatbot/features/legal_contract/rag/dao/query_dao.py`의 `LegalRagQueryDao.nearest_law_documents()`가 수행한다.
 
@@ -251,7 +216,7 @@ vector_score = max(0.0, 1.0 - distance)
 
 PostgreSQL이 아닌 테스트 환경에서는 pgvector 검색을 사용할 수 없으므로, `app/chatbot/features/legal_contract/rag/service/query_ranking.py`의 `python_rank_documents()`가 Python에서 cosine similarity를 계산하는 fallback 역할을 한다.
 
-## 8. 키워드 후보 보강
+## 7. 키워드 후보 보강
 
 벡터 검색만 사용하면 질문의 핵심 법률 용어가 약하게 반영될 수 있다. 이를 보완하기 위해 `app/chatbot/features/legal_contract/rag/dao/query_dao.py`의 `LegalRagQueryDao.keyword_law_documents()`가 키워드 후보를 추가로 조회한다.
 
@@ -275,7 +240,7 @@ primary_terms + expanded_terms
 
 즉, 원문 질문에서 뽑은 핵심어와 DB 매핑에서 찾은 법률 확장어를 함께 사용한다.
 
-## 9. 하이브리드 랭킹
+## 8. 하이브리드 랭킹
 
 최종 랭킹은 `app/chatbot/features/legal_contract/rag/service/query_ranking.py`의 `hybrid_rank_documents()`가 수행한다.
 
@@ -318,7 +283,7 @@ MAX_EXPANDED_KEYWORD_SCORE = 0.05
 
 검색 결과는 `DEFAULT_MIN_SCORE = 0.45` 이상인 문서만 source로 반환된다.
 
-## 10. 검색 결과 DTO
+## 9. 검색 결과 DTO
 
 검색 결과는 `app/chatbot/features/legal_contract/rag/service/query_response.py`의 `source_item()`을 통해 `LegalSourceResponse` 형태로 변환된다.
 
@@ -397,7 +362,7 @@ class LegalRagQueryResponse(BaseModel):
 }
 ```
 
-## 11. 챗봇 답변 생성 흐름
+## 10. 챗봇 답변 생성 흐름
 
 챗봇에서 법률 질문으로 라우팅되면 `app/chatbot/features/legal_contract/service.py`의 `run_legal_contract()`가 실행된다.
 
@@ -412,7 +377,7 @@ return answer_service_factory().answer(original_query, result)
 1. 검색은 정규화 질문 기준으로 수행한다.
 2. 최종 답변은 사용자가 입력한 원문 질문 기준으로 생성한다.
 
-## 12. 답변 생성 프롬프트
+## 11. 답변 생성 프롬프트
 
 답변 생성은 `app/chatbot/features/legal_contract/rag/service/answer_service.py`의 `LegalAnswerService.answer()`가 담당한다.
 
@@ -444,7 +409,7 @@ LLM에 전달되는 context는 다음 필드만 포함한다.
 - 충분한 근거가 없으면 `insufficient_evidence`로 반환한다.
 - 답변에 사용한 근거의 `documentId`만 `citedDocumentIds`에 포함한다.
 
-## 13. LLM 구조화 출력
+## 12. LLM 구조화 출력
 
 답변 생성기는 `app/chatbot/features/legal_contract/rag/service/answer_generator.py`의 `OpenAILegalAnswerGenerator`다. 실제 LLM 호출과 JSON schema 응답 파싱은 같은 파일의 `OpenAILegalAnswerGenerator.generate()`가 수행한다.
 
@@ -475,7 +440,7 @@ class LegalAnswerDraft(BaseModel):
   status: LegalAnswerStatus
 ```
 
-## 14. Citation 검증
+## 13. Citation 검증
 
 LLM이 반환한 `citedDocumentIds`는 그대로 신뢰하지 않는다. `app/chatbot/features/legal_contract/rag/service/answer_response.py`의 `validated_citations()`가 검색 결과에 실제 존재하는 `documentId`만 남긴다.
 
@@ -487,7 +452,7 @@ LLM이 반환한 `citedDocumentIds`는 그대로 신뢰하지 않는다. `app/ch
 
 즉, LLM이 임의로 없는 출처를 만들어도 최종 응답에는 포함되지 않는다.
 
-## 15. 최종 답변 DTO
+## 14. 최종 답변 DTO
 
 챗봇 법률 답변의 최종 DTO는 `app/chatbot/features/legal_contract/rag/dto/answer.py`의 `LegalAnswerResponse`다.
 
@@ -521,7 +486,7 @@ class LegalCitation(BaseModel):
 
 최종 응답은 `app/chatbot/features/legal_contract/rag/service/answer_response.py`의 `response_dict()`에서 `model_dump(mode="json", by_alias=True)`로 변환된다. 따라서 Python 필드명 대신 API alias인 camelCase가 JSON에 사용된다.
 
-## 16. 답변 JSON 예시
+## 15. 답변 JSON 예시
 
 성공 응답:
 
@@ -601,43 +566,3 @@ LLM 생성 실패 응답:
   "message": "법률 답변을 생성하지 못했습니다."
 }
 ```
-
-## 17. 파일별 책임
-
-| 파일 | 책임 |
-|---|---|
-| `controller/query_controller.py` | `/api/laws/query` 엔드포인트 |
-| `controller/dependencies.py` | FastAPI 의존성 provider |
-| `dto/query.py` | 검색 요청/응답 DTO |
-| `dto/answer.py` | 답변 생성 중간 DTO와 최종 응답 DTO |
-| `dao/query_dao.py` | 용어 매핑 조회, 키워드 검색, pgvector 유사도 검색 |
-| `service/query_service.py` | 검색 흐름 오케스트레이션 |
-| `service/query_text.py` | 질문 임베딩 텍스트, 검색어 추출, 중복 제거 |
-| `service/query_ranking.py` | 벡터 검색 fallback, 키워드 보정, 하이브리드 랭킹 |
-| `service/query_response.py` | 검색 성공/실패 응답 생성 |
-| `service/answer_prompt.py` | LLM 답변 프롬프트와 source context 구성 |
-| `service/answer_generator.py` | OpenAI 호출 및 JSON schema 기반 구조화 출력 |
-| `service/answer_service.py` | 답변 생성 흐름 오케스트레이션 |
-| `service/answer_response.py` | citation 검증, 출처 포맷팅, 최종 응답 dict 변환 |
-
-## 18. 설계상 중요한 기준
-
-### 검색과 답변은 분리된다
-
-`LegalRagQueryService`는 법령 근거를 찾는 책임만 가진다. 답변 문장을 만드는 책임은 `LegalAnswerService`에 있다.
-
-이 분리는 검색 품질 평가와 답변 품질 평가를 따로 할 수 있게 한다.
-
-### LLM 출력은 검증 후 사용한다
-
-LLM이 반환한 답변은 바로 신뢰하지 않는다.
-
-- JSON schema로 구조를 제한한다.
-- `LegalAnswerDraft`로 DTO 검증을 한다.
-- `citedDocumentIds`가 실제 검색 결과에 있는지 다시 검증한다.
-
-### 최종 응답에는 원문 근거가 함께 포함된다
-
-`answer`는 사용자에게 보여줄 문장이고, `citations`와 `sources`는 출처와 검색 근거를 구조화해서 담는다.
-
-따라서 프론트엔드는 단순히 `answer`만 표시할 수도 있고, 필요하면 `citations`나 `sources`를 사용해 출처 UI를 별도로 구성할 수도 있다.
