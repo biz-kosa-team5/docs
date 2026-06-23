@@ -8,53 +8,142 @@
 역·학교 좌표 Tool
 ```
 
-추천 핸들러는 사용자의 조건을 받아 아파트를 필터링하고, 비교 핸들러는 사용자가 지정한 아파트들을 항목별로 비교한다.
+추천 핸들러는 이미 만들어진 `slots` 조건을 받아 아파트를 필터링하고, 비교 핸들러는 `slots`에 들어온 아파트들을 항목별로 비교한다.
 
 역·학교 좌표 Tool은 “역 근처”, “학교 근처”, “가까운 역”, “가까운 학교” 같은 조건을 처리하기 위해 사용한다.
 
 ---
 
-# 공통 전처리
+# 전체 처리 흐름과 담당 범위
 
-## 추천 개수 제거 함수
-
-사용자가 “몇 개 추천”, “몇 곳 추천”처럼 개수를 말해도 추천 조건으로 사용하지 않는다.
-
-### 입력값
-
-```json
-{
-  "question":"500세대 이상 아파트 3개 추천해줘"
-}
-```
-
-### 반환값
-
-```json
-{
-  "normalized_question":"500세대 이상 아파트 추천해줘"
-}
-```
-
-### 처리 규칙
+사용자 질문은 먼저 의도 분류와 슬롯 추출 단계를 거친 뒤, 내가 작성하는 서버 코드로 전달된다.
 
 ```
-3개 추천 → 추천
-3곳 추천 → 추천
-몇 개 추천 → 추천
-몇 곳 추천 → 추천
+사용자 질문
+↓
+의도 분류                 ← 내 담당 아님
+↓
+슬롯 추출                 ← 내 담당 아님
+↓
+intent + slots JSON 생성
+↓
+[내가 작성하는 코드] intent에 따라 실행 함수 선택
+↓
+[내가 작성하는 코드] null이 아닌 슬롯만 조건으로 사용
+↓
+[내가 작성하는 코드] DB 조회 및 거리 계산
+↓
+구조화된 결과 반환
 ```
 
-단, 조건 숫자는 제거하지 않는다.
+내가 작성하는 코드는 자연어를 직접 해석하지 않는다.
+
+대신 앞 단계에서 만들어진 `intent + slots` JSON을 받아서 아래처럼 라우팅한다.
+
+```python
+def handle_query(payload: QueryRequest) -> dict:
+  if payload.intent == "recommendation":
+    return recommend_apartments_by_filters(payload.slots)
+
+  if payload.intent == "comparison":
+    return compare_apartments_by_metrics(payload.slots)
+
+  return {
+    "success": False,
+    "reason": "unsupported_intent",
+    "message": "지원하지 않는 질문 유형입니다."
+  }
+```
+
+`school_type`이나 `station_name` 같은 조건만 보고 추천/비교를 판단하지 않는다.
+
+예를 들어 `초등학교` 조건은 아래 두 질문에 모두 등장할 수 있다.
 
 ```
-500세대
-30억
-25평
-3년
-자녀 3명
-강남 3구
+초등학교 근처 아파트 추천해줘
+은마아파트랑 잠실엘스 중 어디가 초등학교에 가까워?
 ```
+
+따라서 Tool 선택 기준은 슬롯 값이 아니라 `intent`이다.
+
+---
+
+# 서버 구현 범위
+
+내가 구현하는 서버 코드는 자연어 처리 파이프라인의 뒤쪽만 담당한다.
+
+포함하는 범위:
+
+- `intent + slots` JSON을 DTO로 받는다.
+- `service`에서 `intent` 값을 보고 추천/비교 로직을 선택한다.
+- `slots`에서 `null`이 아닌 값만 조건으로 사용한다.
+- 필요한 DB 조회와 역·학교 거리 계산을 수행한다.
+- 구조화된 JSON 결과를 반환한다.
+
+포함하지 않는 범위:
+
+- 사용자 자연어 입력 받기
+- 자연어 의도 분류
+- 자연어에서 슬롯 추출
+- 추천 개수 제거 같은 문장 전처리
+- BGE-M3, 임베딩, kNN, threshold 튜닝
+- 응답 문장 생성
+
+따라서 광재님이 작성한 전체 AI 파이프라인 문서는 상위 흐름으로 참고하되, 서버 구현은 아래 MVC 구조 안에서 `JSON 입력 → service 처리 → DB 조회 결과 반환`까지만 담당한다.
+
+```text
+app/controllers/query_controller.py
+  - POST /api/v1/query
+  - QueryRequest DTO 수신
+  - query_service.handle_query 호출
+
+app/dtos/query_dto.py
+  - QueryRequest
+  - intent, slots 구조 정의
+
+app/services/query_service.py
+  - intent 분기
+  - slots null 검사
+  - 추천/비교 쿼리 조건 조립
+  - 역·학교 거리 계산
+
+app/repository.py
+  - 기존 DB 조회 helper 재사용
+```
+
+---
+
+# 공통 JSON 입력 구조
+
+실행 코드가 받는 JSON은 항상 `intent`와 `slots`를 가진다.
+
+```python
+class QueryRequest:
+  intent:str
+  slots:RecommendationSlots|CompareSlots
+```
+
+지원하는 `intent` 값은 우선 아래 두 개로 제한한다.
+
+| intent | 실행 함수 | 역할 |
+| --- | --- | --- |
+| `recommendation` | `recommend_apartments_by_filters` | 조건에 맞는 아파트 추천 |
+| `comparison` | `compare_apartments_by_metrics` | 여러 아파트 항목별 비교 |
+
+---
+
+# 서버 입력 전처리
+
+서버는 문장 전처리를 하지 않는다.
+
+`slots`에 들어온 값만 정리한다.
+
+- 문자열이 빈 문자열이면 `None`으로 본다.
+- 문자열 `"none"`, `"null"`도 `None`으로 본다.
+- 값이 `None`인 슬롯은 쿼리 조건에서 제외한다.
+- `station_name`은 `"서초"`처럼 들어오면 `"서초역"`으로 보정한다.
+
+추천 개수 제거, 원문 정규화, 자연어 숫자 파싱은 서버 이전 단계에서 처리한다.
 
 ---
 
@@ -62,7 +151,7 @@
 
 ## 역할
 
-사용자 질문에서 조건을 추출하고, 해당 조건에 맞는 아파트를 DB에서 조회한다.
+이미 추출된 `slots` 조건을 받아, 해당 조건에 맞는 아파트를 DB에서 조회한다.
 
 예시 질문:
 
@@ -81,7 +170,7 @@
 ## 구현할 함수
 
 ```python
-extract_recommendation_slots(question: str)->RecommendationSlots
+handle_query(payload: QueryRequest)->dict
 recommend_apartments_by_filters(slots: RecommendationSlots)->dict
 ```
 
@@ -95,10 +184,12 @@ recommend_apartments_by_filters
 
 ## 입력값
 
-추천 핸들러는 자연어 질문에서 아래 슬롯을 추출해서 사용한다.
+추천 핸들러는 자연어 질문에서 이미 추출되어 전달된 아래 슬롯을 사용한다.
+
+앞 단계는 전체 JSON의 `intent`를 반드시 `recommendation`으로 설정한다.
 
 ```python
-classRecommendationSlots:
+class RecommendationSlots:
 original_question:str
 normalized_question:str
 
@@ -127,24 +218,27 @@ sort_by:str|None
 서초역 근처 30억 이하 신축 아파트 추천해줘
 ```
 
-추출 결과:
+실행 코드 입력:
 
 ```json
 {
-  "original_question":"서초역 근처 30억 이하 신축 아파트 추천해줘",
-  "normalized_question":"서초역 근처 30억 이하 신축 아파트 추천해줘",
-  "district":null,
-  "station_name":"서초역",
-  "school_name":null,
-  "school_type":null,
-  "max_price":300000,
-  "min_price":null,
-  "min_households":null,
-  "min_pyeong":null,
-  "is_new_build":true,
-  "min_built_year":2020,
-  "radius_m":800,
-  "sort_by":"distance_asc"
+  "intent":"recommendation",
+  "slots": {
+    "original_question":"서초역 근처 30억 이하 신축 아파트 추천해줘",
+    "normalized_question":"서초역 근처 30억 이하 신축 아파트 추천해줘",
+    "district":null,
+    "station_name":"서초역",
+    "school_name":null,
+    "school_type":null,
+    "max_price":300000,
+    "min_price":null,
+    "min_households":null,
+    "min_pyeong":null,
+    "is_new_build":true,
+    "min_built_year":2020,
+    "radius_m":800,
+    "sort_by":"distance_asc"
+  }
 }
 ```
 
@@ -161,13 +255,13 @@ sort_by:str|None
 추천 핸들러는 다음 순서로 동작한다.
 
 ```
-질문 입력
+intent=recommendation JSON 입력
 ↓
-추천 개수 표현 제거
+slots 파싱
 ↓
-추천 조건 슬롯 추출
+null이 아닌 조건만 검사
 ↓
-역 또는 학교 조건이 있으면 좌표 Tool 호출
+역 또는 학교 조건이 있으면 pois 조회
 ↓
 DB 필터 생성
 ↓
@@ -267,7 +361,7 @@ DB 필터 생성
 ## 구현할 함수
 
 ```python
-extract_compare_slots(question: str)->CompareSlots
+handle_query(payload: QueryRequest)->dict
 compare_apartments_by_metrics(slots: CompareSlots)->dict
 ```
 
@@ -282,7 +376,7 @@ compare_apartments_by_metrics
 ## 입력값
 
 ```python
-classCompareSlots:
+class CompareSlots:
 original_question:str
 apartment_names:list[str]
 metrics:list[str]|None
@@ -290,6 +384,11 @@ metrics:list[str]|None
 pyeong:float|None
 transaction_type:str|None
 period:str|None
+
+station_name:str|None
+school_name:str|None
+school_type:str|None
+radius_m:int|None
 ```
 
 ### 입력 예시
@@ -300,23 +399,63 @@ period:str|None
 은마아파트랑 잠실엘스 가격 비교해줘
 ```
 
-추출 결과:
+실행 코드 입력:
 
 ```json
 {
-  "original_question": "은마아파트랑 잠실엘스 가격 비교해줘",
-  "apartment_names": [
-    "은마아파트",
-    "잠실엘스"
-  ],
-  "metrics": [
-    "latest_price",
-    "pyeong",
-    "price_per_pyeong"
-  ],
-  "pyeong": null,
-  "transaction_type": "매매",
-  "period": null
+  "intent": "comparison",
+  "slots": {
+    "original_question": "은마아파트랑 잠실엘스 가격 비교해줘",
+    "apartment_names": [
+      "은마아파트",
+      "잠실엘스"
+    ],
+    "metrics": [
+      "latest_price",
+      "pyeong",
+      "price_per_pyeong"
+    ],
+    "pyeong": null,
+    "transaction_type": "매매",
+    "period": null,
+    "station_name": null,
+    "school_name": null,
+    "school_type": null,
+    "radius_m": 800
+  }
+}
+```
+
+학교 접근성을 비교하는 질문은 아래처럼 입력된다.
+
+질문:
+
+```
+은마아파트랑 잠실엘스 중 어디가 초등학교에 가까워?
+```
+
+실행 코드 입력:
+
+```json
+{
+  "intent": "comparison",
+  "slots": {
+    "original_question": "은마아파트랑 잠실엘스 중 어디가 초등학교에 가까워?",
+    "apartment_names": [
+      "은마아파트",
+      "잠실엘스"
+    ],
+    "metrics": [
+      "nearest_school"
+    ],
+    "pyeong": null,
+    "transaction_type": null,
+    "period": null,
+    "station_name": null,
+    "school_name": null,
+    "school_type": "초등학교",
+    "radius_m": 800
+  }
 }
 ```
 
@@ -325,9 +464,9 @@ period:str|None
 ## 처리 방식
 
 ```
-질문 입력
+intent=comparison JSON 입력
 ↓
-비교 대상 아파트명 추출
+slots 파싱
 ↓
 아파트명 정규화 및 후보 매칭
 ↓
