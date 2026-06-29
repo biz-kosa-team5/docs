@@ -248,6 +248,135 @@
 
 단지 기준 월별 추세 배열을 반환한다.
 
+## 챗봇
+
+### `POST /api/v1/chatbot/query`
+
+요청:
+
+```json
+{
+  "question": "잠실엘스 시세 알려줘"
+}
+```
+
+응답은 기존 자연어/원본 tool payload 필드를 유지하고, 지도 이동과 챗봇 패널 시각 자료를 위한 additive top-level field를 함께 반환한다.
+
+기존 필드:
+
+- `answer`: 사용자에게 그대로 표시할 최종 자연어 답변
+- `fragments`: 분할 질문별 처리 결과
+- `result`: 단일 또는 복수 tool 결과
+- `executionSummary`: 처리 개수 요약
+
+신규 필드:
+
+- `uiActions`: 프론트 앱 상태를 바꾸는 동작 목록
+- `uiArtifacts`: 챗봇 말풍선 아래에 렌더링할 compact 시각 자료 목록
+- `uiSummary`: answer composer가 UI 동작을 자연스럽게 언급할 수 있도록 만든 좌표 없는 요약
+
+예시:
+
+```json
+{
+  "success": true,
+  "status": "success",
+  "question": "잠실엘스 시세 알려줘",
+  "answer": "잠실엘스는 최근 실거래와 1년 흐름을 함께 보는 게 좋습니다. 단지 위치는 지도에 표시했습니다.",
+  "fragments": [],
+  "result": {},
+  "message": "질문을 처리했습니다.",
+  "executionSummary": {
+    "total": 1,
+    "succeeded": 1,
+    "failed": 0
+  },
+  "uiActions": [
+    {
+      "id": "focus_map:complex:1002",
+      "type": "focus_map",
+      "label": "잠실엘스 지도 보기",
+      "autoRun": true,
+      "priority": "primary",
+      "source": "simple_lookup.trade_history",
+      "target": {
+        "kind": "complex",
+        "name": "잠실엘스",
+        "complexId": 1002,
+        "parcelId": 9001002,
+        "latitude": 37.5124,
+        "longitude": 127.0821,
+        "level": 4,
+        "openDetail": true
+      }
+    }
+  ],
+  "uiArtifacts": [
+    {
+      "id": "trend_line_chart:complex:잠실엘스",
+      "type": "trend_line_chart",
+      "title": "잠실엘스 시세 흐름",
+      "source": "price_trend.timeseries",
+      "unit": "만원",
+      "points": [
+        { "period": "2025-06", "value": 300000, "count": 1 },
+        { "period": "2026-05", "value": 315000, "count": 2 }
+      ]
+    }
+  ],
+  "uiSummary": {
+    "hasMapFocus": true,
+    "primaryTargetName": "잠실엘스",
+    "primaryActionLabel": "잠실엘스 지도 보기",
+    "artifactTypes": ["trend_line_chart"]
+  }
+}
+```
+
+#### `uiActions`
+
+v1은 `focus_map`만 지원한다.
+
+```ts
+type ChatbotUiAction = {
+  id: string;
+  type: 'focus_map';
+  label: string;
+  autoRun: boolean;
+  priority: 'primary' | 'secondary';
+  source: string;
+  target: {
+    kind: 'complex' | 'region';
+    name: string;
+    complexId: number | null;
+    parcelId: number | null;
+    latitude: number;
+    longitude: number;
+    level: number;
+    openDetail: boolean;
+  };
+};
+```
+
+실행 규칙:
+
+- `latitude`, `longitude`, `level`이 유효한 숫자인 action만 실행한다.
+- 응답당 `autoRun=true`는 최대 1개다.
+- complex target 기본 level은 `4`, region target 기본 level은 `7`이다.
+- `target.kind=complex`이고 `openDetail=true`이면 프론트는 상세 패널을 연다.
+- `target.kind=region`이면 지도만 이동하고 기존 상세 패널은 임의로 닫지 않는다.
+
+#### `uiArtifacts`
+
+v1 type은 4종이다.
+
+- `comparison_bar_chart`: 비교 가능한 numeric metric의 compact bar chart
+- `trend_line_chart`: 월별 시세 흐름 mini line chart
+- `ranking_list`: 가격 변화율 또는 최고가/최저가 순위
+- `recommendation_list`: 추천 후보 compact list
+
+artifact item의 `actionId`가 `uiActions[].id`와 일치하면 프론트는 해당 item click/button으로 같은 `focus_map` 동작을 실행한다.
+
 ## Pagination 기준
 
 - `page`는 0부터 시작한다.
