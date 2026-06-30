@@ -133,11 +133,20 @@
 
 ## 법령 RAG 근거 없음
 
-이번 live 결과에서는 다수의 `legal_contract` 질문이 tool은 호출됐지만 answer가 `질문과 관련된 법령 근거를 찾지 못했습니다.`로 끝났다.
+초기 live 결과에서는 다수의 `legal_contract` 질문이 tool은 호출됐지만 answer가 `질문과 관련된 법령 근거를 찾지 못했습니다.`로 끝났다.
 
 이 경우는 `tool을 못 찾은 것`이 아니라 `tool은 찾았지만 RAG source를 못 찾은 것`이다. 사용자 관점에서는 법령 질문에 대한 답을 받지 못했으므로 품질 실패로 별도 관리해야 한다.
 
-대표 케이스:
+이후 2026-06-30 현재 DB/embedding 상태로 `LC-001`부터 `LC-026`까지 재검증했다.
+
+- 상세 결과: `docs/qa/chatbot-qa-legal-rag-recheck-2026-06-30.md`
+- law documents: `3131`
+- embedded law documents: `3131`
+- legal RAG 단독 결과: `26건 중 25건 source 반환`
+- 실제 챗봇 대표 확인: `LC-001`은 `specialist_tool -> legal_contract`, `sources=7`
+- 남은 실패: `LC-009`
+
+초기 실패 대표 케이스:
 
 - `LC-001` `30억 아파트 매매 시 알아야 할 법률이 있을까?`
 - `LC-002` `아파트 매매 시 세금 책정 관련 법을 알려줘.`
@@ -146,9 +155,18 @@
 - `RV-017` `계약 해제하려면 계약금은 어떻게 돼?`
 - `RV-018` `전세 세입자 있는 아파트 사면 보증금은 누가 돌려줘?`
 
+현재 잔여 실패:
+
+- `LC-009` `부모님이 돈을 보태주면 문제가 있어?`
+  - detected intent가 `general`로만 잡힌다.
+  - `증여`, `증여세`, `자금출처`, `특수관계인`, `부담부증여` 확장어가 붙지 않는다.
+  - top score가 min score `0.45`를 넘지 못해 `no_legal_sources`로 실패한다.
+
 필요한 처리:
 
-- legal RAG 문서 적재 상태, embedding index, retrieval query를 별도로 점검한다.
+- legal RAG 문서 적재 상태, embedding index, retrieval query를 별도로 점검한다. 현재 DB 기준 문서/embedding은 정상이다.
+- `부모님이 돈을 보태`, `가족이 돈을 지원`, `부모 자금 지원` 표현을 세금/증여 intent로 잡는다.
+- legal query expansion에 `증여`, `증여세`, `자금출처`, `특수관계인`, `부담부증여`를 추가한다.
 - QA runner는 `legal_contract`의 `success=false` 또는 source 0건을 제품 실패로 분류해야 한다.
 
 ## QA Runner 보정 필요 항목

@@ -12,6 +12,7 @@
 - [레거시 스냅샷 적재](data/legacy-snapshot-import.md)
 - [챗봇 QA 사전 점검](qa/chatbot-qa-preflight-checklist.md)
 - [챗봇 QA 실패 묶음](qa/chatbot-qa-failure-triage-2026-06-30.md)
+- [챗봇 Legal RAG 재검증](qa/chatbot-qa-legal-rag-recheck-2026-06-30.md)
 - [로드맵](planning/roadmap.md)
 
 ## 작업 순서
