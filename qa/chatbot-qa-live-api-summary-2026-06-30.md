@@ -41,6 +41,7 @@ set -a; source .env; set +a
 - Smoke JSONL: `docs/qa/chatbot-qa-smoke-live-2026-06-30.jsonl`
 - Full Markdown: `docs/qa/chatbot-qa-docs-live-results-2026-06-30.md`
 - Full JSONL: `docs/qa/chatbot-qa-docs-live-results-2026-06-30.jsonl`
+- 사용자 관점 실패 묶음: `docs/qa/chatbot-qa-failure-triage-2026-06-30.md`
 
 ## 결과 요약
 
@@ -53,6 +54,12 @@ set -a; source .env; set +a
 | answer ok | `144 / 144` |
 | nested answer absent | `144 / 144` |
 | token check | `not_captured 144건` |
+
+주의:
+
+- 위 PASS/FAIL은 runner의 기계 판정이다.
+- 일부 케이스는 `answer_ok=true`로 PASS 처리됐지만 추천 후보 없음, 비교 데이터 부족, RAG 근거 없음처럼 사용자 관점에서는 실패다.
+- 사용자 관점 실패는 `chatbot-qa-failure-triage-2026-06-30.md`에 별도 분류했다.
 
 ## 실행 경로 분포
 
@@ -92,6 +99,17 @@ set -a; source .env; set +a
 | 하락률 ranking 질문 오해 | `PT-011` | `price_trend`는 호출됐지만 `simple_lookup`도 함께 호출됐고, 답변이 "많이 내린"보다 일반 시세 흐름으로 기울었다. |
 | 추천 후 후보 비교 누락 | `MX-DP-001` | recommendation만 결과화되고 comparison 결과가 빠졌다. |
 | 같은 tool 다중 지역 판단 | `MX-ST-001` | payload에는 강남구/송파구 `price_trend` 결과가 모두 있으나 runner의 handler 수집이 중복 handler를 하나로 축약해 실패 처리했다. |
+
+## PASS지만 사용자 관점 실패
+
+| 분류 | 케이스 | 판단 |
+| --- | --- | --- |
+| 추천 후보 없음 | `RC-013` | `초등학교 근처 아파트 추천해줘`에 후보 없이 조건 완화 안내만 반환했다. |
+| 비교 데이터 부족 | `CP-002` | `압구정현대`를 찾지 못해 비교 결과가 없는데 runner는 PASS 처리했다. |
+| 비교 대상 파싱 흔들림 | `CP-003` | 사용자 확인 결과에서 `두산위브 거리`처럼 metric 표현이 단지명에 붙어 비교 실패가 발생했다. |
+| 법령 RAG 근거 없음 | `LC-*`, `RV-017`, `RV-018` 일부 | `legal_contract` tool은 호출됐지만 source를 못 찾아 답을 제공하지 못했다. |
+
+상세 목록과 보정 기준은 `docs/qa/chatbot-qa-failure-triage-2026-06-30.md`를 기준으로 본다.
 
 ## 품질 관찰
 
