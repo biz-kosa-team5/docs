@@ -10,6 +10,7 @@
 - [API 계약](architecture/api-contract.md)
 - [최소 ERD](database/erd.md)
 - [레거시 스냅샷 적재](data/legacy-snapshot-import.md)
+- [챗봇 QA 사전 점검](qa/chatbot-qa-preflight-checklist.md)
 - [로드맵](planning/roadmap.md)
 
 ## 작업 순서
