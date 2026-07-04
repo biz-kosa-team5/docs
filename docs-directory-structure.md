@@ -6,6 +6,7 @@
 - `architecture/`: 시스템 범위, 프론트엔드 이식 기준, API 계약
 - `database/`: read model ERD, 좌표 정책, 인덱스
 - `data/`: 레거시 데이터 추출 및 적재 기준
+- `qa/`: 챗봇 질문지 실행 결과, live LLM QA 요약, 전체 실행 전 preflight 체크리스트
 - `planning/`: 단계별 작업 로드맵과 검증 기준
 
 ## 작성 규칙
